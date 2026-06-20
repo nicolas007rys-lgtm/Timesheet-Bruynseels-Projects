@@ -542,6 +542,7 @@ function checkAdmin(){
     if(loginLog.length>50)loginLog=loginLog.slice(0,50);
     slaData('wr_loginlog',loginLog);
     renderAdmin();
+    renderOverzicht();
   } else {
     toonToast('⚠️ Wrong password',true);
     document.getElementById('admin-pw').value='';
