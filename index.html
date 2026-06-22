@@ -670,6 +670,46 @@
 </head>
 <body>
 
+  <script>
+const API_URL = "https://script.google.com/macros/s/AKfycbwtWtT8zYdbI1azFTIxibNjt1m4JO3fcjg-0zeEFjPd9cehPDbbVuzQZqJlD3MyICjIdg/exec";
+
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.getElementById("timesheetForm");
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const payload = {
+      naam: document.getElementById("naam").value,
+      datum: document.getElementById("datum").value,
+      werf: document.getElementById("werf").value,
+      werken: document.getElementById("werken").value,
+      uren: document.getElementById("uren").value,
+      problems: document.getElementById("problems").value,
+      materials: document.getElementById("materials").value,
+      issues: document.getElementById("issues").value
+    };
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        mode: "no-cors",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      document.getElementById("success").style.display = "block";
+      form.reset();
+
+    } catch (err) {
+      alert("Er ging iets mis bij het verzenden.");
+      console.error(err);
+    }
+  });
+});
+</script>
+
+
 <!-- HEADER -->
 <div class="header">
   <div class="header-logo">
