@@ -1421,5 +1421,40 @@ function toonToast(msg, fout) {
 document.getElementById('export-popup').addEventListener('click', function(e) { if (e.target === this) sluitPopup(); });
 document.getElementById('edit-popup').addEventListener('click', function(e) { if (e.target === this) sluitEditPopup(); });
 </script>
+
+  <form id="timesheetForm" class="form">
+  
+  <label>Naam</label>
+  <input id="naam" type="text" required>
+
+  <label>Datum</label>
+  <input id="datum" type="date" required>
+
+  <label>Werf</label>
+  <input id="werf" type="text" required>
+
+  <label>Uitgevoerde werken</label>
+  <textarea id="werken" required></textarea>
+
+  <label>Uren</label>
+  <input id="uren" type="number" min="0" step="0.5" required>
+
+  <label>Problemen</label>
+  <textarea id="problems"></textarea>
+
+  <label>Materialen nodig</label>
+  <textarea id="materials"></textarea>
+
+  <label>Issues</label>
+  <textarea id="issues"></textarea>
+
+  <button type="submit">Verzenden</button>
+
+  <div id="success" style="display:none; margin-top:20px; color:green;">
+    ✔ Ingevuld! De gegevens zijn verzonden.
+  </div>
+
+</form>
+
 </body>
 </html>
