@@ -493,6 +493,7 @@ async function slaOp() {
   if(!werf)          {toonToast('⚠️ Choose a site',true);return;}
   if(!werken)        {toonToast('⚠️ Describe the work',true);return;}
   if(!start||!einde) {toonToast('⚠️ Enter start and end time',true);return;}
+  if(!pauzeStart||!pauzeEinde) {toonToast('⚠️ Enter lunch break times',true);return;}
 
   const totalMin=berekenTotaal(start,einde,pauzeStart,pauzeEinde);
   if(totalMin===null||totalMin<=0){toonToast('⚠️ End time must be after start time',true);return;}
