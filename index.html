@@ -360,7 +360,7 @@
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzOk3EpQkowTxxgcdtDpkhhp-lzuTkOzmp6fUWF29MX1xYEX8zdX-kiMz3ZfHYwdDT20A/exec';
 const STANDAARD_PW = 'admin123';
 
-const VASTE_AANNEMERS = ['Adam','Marcin','Tommek','Eric','Arthur','Ervis','Yoann','Ronny','Shared','Marek','Micha','Lucas','Nittien','Jonathan'];
+const VASTE_AANNEMERS = ['Adam','Marcin','Tommek','Eric','Arthur','Ervis','Yoann','Ronny','Shared','Marek','Micha','Lucas','Nittien'];
 const VASTE_WERVEN = ['Diestsevest','Mohamed','Brusselsestraat 53','Predikherenstraat','Mechelsestraat','Schapenstraat','Kapucijnenvoer','Kardinaal Mercierlaan 47','Meyer-Henneaustraat'];
 
 function maakAannemerLijst(n) { return n.map(naam => ({naam, actief: true})); }
@@ -396,16 +396,27 @@ let adminPw      = laadData('wr_pw', STANDAARD_PW) || STANDAARD_PW;
 let huidigePersoon = null;
 let isAdmin = false;
 
+let vandaagInSheet = []; // namen die vandaag al geregistreerd zijn volgens Sheet
+
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('f-datum').value = vandaag();
-  renderNamen();
+  laadStatusVanSheet();
   renderOverzicht();
 });
+
+async function laadStatusVanSheet() {
+  try {
+    const res = await fetch(SHEET_URL + '?action=status');
+    const json = await res.json();
+    vandaagInSheet = json.today || [];
+  } catch { vandaagInSheet = []; }
+  renderNamen();
+}
 
 function vandaag()    { return new Date().toISOString().split('T')[0]; }
 function initialen(n) { return (n||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2); }
 function formatDatum(d) { if(!d)return''; const[y,m,dag]=d.split('-'); return`${dag}/${m}/${y}`; }
-function heeftVandaag(naam) { return registraties.some(r => r.naam === naam && r.datum === vandaag()); }
+function heeftVandaag(naam) { return vandaagInSheet.includes(naam) || registraties.some(r => r.naam === naam && r.datum === vandaag()); }
 
 // ── UREN ──
 function tijdNaarMinuten(t) { if(!t)return null; const[h,m]=t.split(':').map(Number); return h*60+m; }
@@ -526,7 +537,38 @@ async function slaOp() {
     toonToast('✅ Saved locally');
   }
   btn.disabled=false; btn.textContent='Save registration';
-  renderNamen();
+  laadStatusVanSheet();
+}
+
+// ── ADMIN DATA VAN SHEET ──
+let sheetRegistraties = []; // alle data van sheet voor admin
+
+async function laadAdminData(pw) {
+  const lijst = document.getElementById('overzicht-lijst');
+  if(lijst) lijst.innerHTML = '<div class="leeg"><div class="leeg-icon">⏳</div><p>Loading from Sheet...</p></div>';
+  try {
+    const res = await fetch(SHEET_URL + '?action=all&pw=' + encodeURIComponent(pw));
+    const json = await res.json();
+    if(json.data) {
+      sheetRegistraties = json.data.map((r, i) => ({
+        id: 'sheet_' + i,
+        naam: r['Name'] || '',
+        datum: r['Date'] ? (r['Date'] instanceof Object ? r['Date'] : String(r['Date']).slice(0,10)) : '',
+        werf: r['Site'] || '',
+        start: r['Start'] || '',
+        einde: r['End'] || '',
+        pauzeStart: r['Break start'] || '',
+        pauzeEinde: r['Break end'] || '',
+        urenTekst: r['Total hours'] || '',
+        werken: r['Work performed'] || '',
+        problems: r['Problems'] || '',
+        materials: r['Materials needed'] || '',
+        issues: r['Issues'] || '',
+        tijdstip: r['Timestamp'] || ''
+      })).filter(r => r.naam);
+    }
+  } catch { sheetRegistraties = []; }
+  renderOverzicht();
 }
 
 // ── OVERZICHT ──
@@ -560,7 +602,8 @@ function renderOverzicht(filter) {
   const lijst=document.getElementById('overzicht-lijst');
   let gefilterd;
   if(isAdmin){
-    gefilterd=actieveFilter==='alle'?registraties:registraties.filter(r=>r.naam===actieveFilter);
+    const bron = sheetRegistraties.length > 0 ? sheetRegistraties : registraties;
+    gefilterd = actieveFilter==='alle' ? bron : bron.filter(r=>r.naam===actieveFilter);
   } else if(huidigePersoon){
     gefilterd=registraties.filter(r=>r.naam===huidigePersoon);
   } else {
@@ -658,7 +701,8 @@ function checkAdmin(){
     slaData('wr_loginlog',loginLog);
     document.getElementById('nav-overzicht').style.display='';
     document.getElementById('export-header-btn').style.display='';
-    renderAdmin(); renderOverzicht();
+    renderAdmin();
+    laadAdminData(inp);
   } else {
     toonToast('⚠️ Wrong password',true);
     document.getElementById('admin-pw').value='';
