@@ -184,7 +184,7 @@
     </div>
   </div>
   <div class="header-right">
-    <button class="btn-icon" onclick="toonExport()" title="Export">⬇️</button>
+    <button class="btn-icon" id="export-header-btn" onclick="toonExport()" title="Export" style="display:none;">⬇️</button>
   </div>
 </div>
 
@@ -307,7 +307,7 @@
 <div class="bottom-nav">
   <button class="nav-btn active" id="nav-naam" onclick="gaaNaar('naam')"><span class="nav-icon">👤</span>Login</button>
   <button class="nav-btn" id="nav-form" onclick="gaaNaar('form')"><span class="nav-icon">✏️</span>Register</button>
-  <button class="nav-btn" id="nav-overzicht" onclick="gaaNaar('overzicht')"><span class="nav-icon">📋</span>Overview</button>
+  <button class="nav-btn" id="nav-overzicht" onclick="gaaNaar('overzicht')" style="display:none;"><span class="nav-icon">📋</span>Overview</button>
   <button class="nav-btn" id="nav-admin" onclick="gaaNaar('admin')"><span class="nav-icon">⚙️</span>Admin</button>
 </div>
 
@@ -655,6 +655,8 @@ function checkAdmin(){
     loginLog.unshift(entry);
     if(loginLog.length>50) loginLog=loginLog.slice(0,50);
     slaData('wr_loginlog',loginLog);
+    document.getElementById('nav-overzicht').style.display='';
+    document.getElementById('export-header-btn').style.display='';
     renderAdmin(); renderOverzicht();
   } else {
     toonToast('⚠️ Wrong password',true);
@@ -666,7 +668,9 @@ function sluitAdmin(){
   document.getElementById('admin-locked').style.display='block';
   document.getElementById('admin-content').style.display='none';
   document.getElementById('admin-pw').value='';
-  renderOverzicht();
+  document.getElementById('nav-overzicht').style.display='none';
+  document.getElementById('export-header-btn').style.display='none';
+  gaaNaar('naam');
 }
 function veranderPw(){
   const nieuw=document.getElementById('nieuw-pw').value.trim();
