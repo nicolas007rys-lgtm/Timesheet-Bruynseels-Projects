@@ -359,77 +359,86 @@
 // ── CONFIG ──
 const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzOk3EpQkowTxxgcdtDpkhhp-lzuTkOzmp6fUWF29MX1xYEX8zdX-kiMz3ZfHYwdDT20A/exec';
 const STANDAARD_PW = 'admin123';
-
-const VASTE_AANNEMERS = ['Adam','Marcin','Tommek','Eric','Arthur','Ervis','Yoann','Ronny','Shared','Marek','Micha','Lucas','Nittien'];
 const VASTE_WERVEN = ['Diestsevest','Mohamed','Brusselsestraat 53','Predikherenstraat','Mechelsestraat','Schapenstraat','Kapucijnenvoer','Kardinaal Mercierlaan 47','Meyer-Henneaustraat'];
 
-function maakAannemerLijst(n) { return n.map(naam => ({naam, actief: true})); }
-function maakWerfLijst(n)     { return n.map(naam => ({naam, actief: true})); }
-
+function maakWerfLijst(n) { return n.map(naam => ({naam, actief: true})); }
 function laadData(k, fb) {
-  try {
-    const d = localStorage.getItem(k);
-    if (!d) return fb;
-    const p = JSON.parse(d);
-    if (!Array.isArray(p) || p.length === 0) return fb;
-    return p;
-  } catch { return fb; }
+  try { const d=localStorage.getItem(k); if(!d)return fb; const p=JSON.parse(d); if(!Array.isArray(p)||p.length===0)return fb; return p; } catch { return fb; }
 }
 function slaData(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
 
-function laadAannemers() {
-  const s = laadData('wr_aannemers_v2', null);
-  if (!s || !s[0]?.hasOwnProperty('naam')) { const d = maakAannemerLijst(VASTE_AANNEMERS); slaData('wr_aannemers_v2', d); return d; }
-  return s;
-}
 function laadWerven() {
   const s = laadData('wr_werven_v2', null);
-  if (!s || !s[0]?.hasOwnProperty('naam')) { const d = maakWerfLijst(VASTE_WERVEN); slaData('wr_werven_v2', d); return d; }
+  if (!s || !s[0]?.hasOwnProperty('naam')) { const d=maakWerfLijst(VASTE_WERVEN); slaData('wr_werven_v2',d); return d; }
   return s;
 }
 
-let aannemers    = laadAannemers();
+let aannemers    = []; // laden van Sheet
 let werven       = laadWerven();
 let registraties = laadData('wr_registraties_v2', []);
 let loginLog     = laadData('wr_loginlog', []);
 let adminPw      = laadData('wr_pw', STANDAARD_PW) || STANDAARD_PW;
 let huidigePersoon = null;
 let isAdmin = false;
-
-let vandaagInSheet = []; // namen die vandaag al geregistreerd zijn volgens Sheet
+let vandaagInSheet = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('f-datum').value = vandaag();
-  laadStatusVanSheet();
-  renderOverzicht();
+  laadWorkersVanSheet();
 });
+
+async function laadWorkersVanSheet() {
+  try {
+    const res  = await fetch(SHEET_URL + '?action=workers');
+    const json = await res.json();
+    if (json.workers && json.workers.length > 0) {
+      aannemers = json.workers;
+      slaData('wr_aannemers_v2', aannemers); // lokale cache
+    } else {
+      // Sheet leeg: gebruik cache of defaults
+      aannemers = laadData('wr_aannemers_v2', null) || [];
+      if (aannemers.length === 0) {
+        // Eerste keer: push defaults naar Sheet via admin (hier gewoon lokaal tonen)
+        aannemers = ['Adam','Marcin','Tommek','Eric','Arthur','Ervis','Yoann','Ronny','Shared','Marek','Micha','Lucas','Nittien']
+          .map(naam => ({naam, actief: true}));
+      }
+    }
+  } catch {
+    // Offline: gebruik cache
+    aannemers = laadData('wr_aannemers_v2', []);
+    if (!aannemers.length) aannemers = ['Adam','Marcin','Tommek','Eric','Arthur','Ervis','Yoann','Ronny']
+      .map(naam => ({naam, actief: true}));
+  }
+  await laadStatusVanSheet();
+}
 
 async function laadStatusVanSheet() {
   try {
-    const res = await fetch(SHEET_URL + '?action=status');
+    const res  = await fetch(SHEET_URL + '?action=status');
     const json = await res.json();
     vandaagInSheet = json.today || [];
   } catch { vandaagInSheet = []; }
   renderNamen();
+  renderOverzicht();
 }
 
 function vandaag()    { return new Date().toISOString().split('T')[0]; }
 function initialen(n) { return (n||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2); }
 function formatDatum(d) { if(!d)return''; const[y,m,dag]=d.split('-'); return`${dag}/${m}/${y}`; }
-function heeftVandaag(naam) { return vandaagInSheet.includes(naam) || registraties.some(r => r.naam === naam && r.datum === vandaag()); }
+function heeftVandaag(naam) { return vandaagInSheet.includes(naam)||registraties.some(r=>r.naam===naam&&r.datum===vandaag()); }
 
 // ── UREN ──
 function tijdNaarMinuten(t) { if(!t)return null; const[h,m]=t.split(':').map(Number); return h*60+m; }
 function berekenTotaal(start,einde,ps,pe) {
-  const s=tijdNaarMinuten(start), e=tijdNaarMinuten(einde);
-  if(s===null||e===null||e<=s) return null;
+  const s=tijdNaarMinuten(start),e=tijdNaarMinuten(einde);
+  if(s===null||e===null||e<=s)return null;
   let tot=e-s;
-  if(ps&&pe){const a=tijdNaarMinuten(ps),b=tijdNaarMinuten(pe); if(a&&b&&b>a) tot-=(b-a);}
+  if(ps&&pe){const a=tijdNaarMinuten(ps),b=tijdNaarMinuten(pe);if(a&&b&&b>a)tot-=(b-a);}
   return tot;
 }
 function minutenNaarTekst(min) {
-  if(min===null||min<=0) return '—';
-  const h=Math.floor(min/60), m=min%60;
+  if(min===null||min<=0)return'—';
+  const h=Math.floor(min/60),m=min%60;
   return m===0?`${h}h`:`${h}h${String(m).padStart(2,'0')}`;
 }
 function berekenUren() {
@@ -447,11 +456,11 @@ function gaaNaar(scherm) {
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('screen-'+scherm).classList.add('active');
   document.getElementById('nav-'+scherm).classList.add('active');
-  if(scherm==='overzicht') renderOverzicht();
-  if(scherm==='admin')     renderAdmin();
+  if(scherm==='overzicht')renderOverzicht();
+  if(scherm==='admin')renderAdmin();
   if(scherm==='form'&&!huidigePersoon){gaaNaar('naam');return;}
-  if(scherm==='form')      renderWerfSelect();
-  if(scherm==='naam')      renderNamen();
+  if(scherm==='form')renderWerfSelect();
+  if(scherm==='naam')renderNamen();
 }
 
 // ── NAMEN ──
@@ -469,7 +478,6 @@ function renderNamen() {
     grid.appendChild(btn);
   });
 }
-
 function kiesNaam(naam) {
   huidigePersoon=naam;
   document.getElementById('header-persoon').textContent=naam;
@@ -485,104 +493,81 @@ function renderWerfSelect() {
   werven.filter(w=>w?.actief&&w.naam).forEach(w=>{
     const opt=document.createElement('option');
     opt.value=w.naam; opt.textContent=w.naam;
-    if(w.naam===huidig) opt.selected=true;
+    if(w.naam===huidig)opt.selected=true;
     sel.appendChild(opt);
   });
 }
-
 async function slaOp() {
   if(!huidigePersoon){toonToast('⚠️ Select your name first',true);return;}
-  const datum   = document.getElementById('f-datum').value;
-  const werf    = document.getElementById('f-werf').value;
-  const werken  = document.getElementById('f-werken').value.trim();
-  const start   = document.getElementById('f-start').value;
-  const einde   = document.getElementById('f-einde').value;
-  const pauzeStart = document.getElementById('f-pauze-start').value;
-  const pauzeEinde = document.getElementById('f-pauze-einde').value;
-
-  if(!datum)         {toonToast('⚠️ Enter a date',true);return;}
-  if(!werf)          {toonToast('⚠️ Choose a site',true);return;}
-  if(!werken)        {toonToast('⚠️ Describe the work',true);return;}
-  if(!start||!einde) {toonToast('⚠️ Enter start and end time',true);return;}
-  if(!pauzeStart||!pauzeEinde) {toonToast('⚠️ Enter lunch break times',true);return;}
-
+  const datum=document.getElementById('f-datum').value;
+  const werf=document.getElementById('f-werf').value;
+  const werken=document.getElementById('f-werken').value.trim();
+  const start=document.getElementById('f-start').value;
+  const einde=document.getElementById('f-einde').value;
+  const pauzeStart=document.getElementById('f-pauze-start').value;
+  const pauzeEinde=document.getElementById('f-pauze-einde').value;
+  if(!datum){toonToast('⚠️ Enter a date',true);return;}
+  if(!werf){toonToast('⚠️ Choose a site',true);return;}
+  if(!werken){toonToast('⚠️ Describe the work',true);return;}
+  if(!start||!einde){toonToast('⚠️ Enter start and end time',true);return;}
+  if(!pauzeStart||!pauzeEinde){toonToast('⚠️ Enter lunch break times',true);return;}
   const totalMin=berekenTotaal(start,einde,pauzeStart,pauzeEinde);
   if(totalMin===null||totalMin<=0){toonToast('⚠️ End time must be after start time',true);return;}
-
   const rec={
-    id: Date.now(),
-    naam: huidigePersoon, datum, werf, werken,
-    start, einde, pauzeStart, pauzeEinde,
-    uren: Math.round(totalMin)/60,
-    urenTekst: minutenNaarTekst(totalMin),
-    problems: document.getElementById('f-problems').value.trim(),
-    materials: document.getElementById('f-materials').value.trim(),
-    issues:    document.getElementById('f-issues').value.trim(),
-    tijdstip:  new Date().toISOString()
+    id:Date.now(),naam:huidigePersoon,datum,werf,werken,
+    start,einde,pauzeStart,pauzeEinde,
+    uren:Math.round(totalMin)/60,urenTekst:minutenNaarTekst(totalMin),
+    problems:document.getElementById('f-problems').value.trim(),
+    materials:document.getElementById('f-materials').value.trim(),
+    issues:document.getElementById('f-issues').value.trim(),
+    tijdstip:new Date().toISOString()
   };
-
   registraties.unshift(rec);
-  slaData('wr_registraties_v2', registraties);
-
+  slaData('wr_registraties_v2',registraties);
   ['f-start','f-einde','f-pauze-start','f-pauze-einde','f-werken','f-problems','f-materials','f-issues'].forEach(id=>{document.getElementById(id).value='';});
   document.getElementById('f-datum').value=vandaag();
   document.getElementById('totaal-display').textContent='—';
-
   const btn=document.getElementById('btn-opslaan');
   btn.disabled=true; btn.textContent='⏳ Saving...';
   try {
     await fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},body:JSON.stringify(rec)});
     toonToast('✅ Saved to Google Sheet!');
-  } catch {
-    toonToast('✅ Saved locally');
-  }
+  } catch { toonToast('✅ Saved locally'); }
   btn.disabled=false; btn.textContent='Save registration';
   laadStatusVanSheet();
 }
 
 // ── ADMIN DATA VAN SHEET ──
-let sheetRegistraties = []; // alle data van sheet voor admin
-
+let sheetRegistraties = [];
 async function laadAdminData(pw) {
-  const lijst = document.getElementById('overzicht-lijst');
-  if(lijst) lijst.innerHTML = '<div class="leeg"><div class="leeg-icon">⏳</div><p>Loading from Sheet...</p></div>';
+  const lijst=document.getElementById('overzicht-lijst');
+  if(lijst)lijst.innerHTML='<div class="leeg"><div class="leeg-icon">⏳</div><p>Loading from Sheet...</p></div>';
   try {
-    const res = await fetch(SHEET_URL + '?action=all&pw=' + encodeURIComponent(pw));
-    const json = await res.json();
-    if(json.data) {
-      sheetRegistraties = json.data.map((r, i) => ({
-        id: 'sheet_' + i,
-        naam: r['Name'] || '',
-        datum: r['Date'] ? (r['Date'] instanceof Object ? r['Date'] : String(r['Date']).slice(0,10)) : '',
-        werf: r['Site'] || '',
-        start: r['Start'] || '',
-        einde: r['End'] || '',
-        pauzeStart: r['Break start'] || '',
-        pauzeEinde: r['Break end'] || '',
-        urenTekst: r['Total hours'] || '',
-        werken: r['Work performed'] || '',
-        problems: r['Problems'] || '',
-        materials: r['Materials needed'] || '',
-        issues: r['Issues'] || '',
-        tijdstip: r['Timestamp'] || ''
-      })).filter(r => r.naam);
+    const res=await fetch(SHEET_URL+'?action=all&pw='+encodeURIComponent(pw));
+    const json=await res.json();
+    if(json.data){
+      sheetRegistraties=json.data.map((r,i)=>({
+        id:'sheet_'+i,naam:r['Name']||'',
+        datum:r['Date']?(r['Date'] instanceof Object?r['Date']:String(r['Date']).slice(0,10)):'',
+        werf:r['Site']||'',start:r['Start']||'',einde:r['End']||'',
+        pauzeStart:r['Break start']||'',pauzeEinde:r['Break end']||'',
+        urenTekst:r['Total hours']||'',werken:r['Work performed']||'',
+        problems:r['Problems']||'',materials:r['Materials needed']||'',
+        issues:r['Issues']||'',tijdstip:r['Timestamp']||''
+      })).filter(r=>r.naam);
     }
-  } catch { sheetRegistraties = []; }
+  } catch { sheetRegistraties=[]; }
   renderOverzicht();
 }
 
 // ── OVERZICHT ──
 let actieveFilter='alle';
-
 function renderOverzicht(filter) {
-  if(filter!==undefined) actieveFilter=filter;
+  if(filter!==undefined)actieveFilter=filter;
   const nc=document.getElementById('privacy-notice-cont');
-  if(!isAdmin&&huidigePersoon) {
-    nc.innerHTML=`<div class="privacy-notice">🔒 Showing your registrations only. Admin can view all.</div>`;
-  } else if(isAdmin) {
-    nc.innerHTML=`<div class="privacy-notice" style="border-color:rgba(46,125,80,0.3);color:var(--green);">👁 Admin view — all registrations visible</div>`;
-  } else { nc.innerHTML=''; }
-
+  if(!isAdmin&&huidigePersoon){nc.innerHTML=`<div class="privacy-notice">🔒 Showing your registrations only. Admin can view all.</div>`;}
+  else if(isAdmin){nc.innerHTML=`<div class="privacy-notice" style="border-color:rgba(46,125,80,0.3);color:var(--green);">👁 Admin view — all registrations visible</div>`;}
+  else{nc.innerHTML='';}
   const filterRow=document.getElementById('filter-row');
   if(isAdmin){
     filterRow.style.display='flex';
@@ -590,28 +575,21 @@ function renderOverzicht(filter) {
     aannemers.filter(a=>a?.actief&&a.naam).forEach(a=>{
       const btn=document.createElement('button');
       btn.className='filter-btn'+(actieveFilter===a.naam?' active':'');
-      btn.textContent=a.naam;
-      btn.onclick=()=>filterOverzicht(a.naam,btn);
+      btn.textContent=a.naam; btn.onclick=()=>filterOverzicht(a.naam,btn);
       filterRow.appendChild(btn);
     });
-  } else {
-    filterRow.style.display='none';
-    actieveFilter=huidigePersoon||'niemand';
-  }
-
+  } else { filterRow.style.display='none'; actieveFilter=huidigePersoon||'niemand'; }
   const lijst=document.getElementById('overzicht-lijst');
   let gefilterd;
   if(isAdmin){
-    const bron = sheetRegistraties.length > 0 ? sheetRegistraties : registraties;
-    gefilterd = actieveFilter==='alle' ? bron : bron.filter(r=>r.naam===actieveFilter);
+    const bron=sheetRegistraties.length>0?sheetRegistraties:registraties;
+    gefilterd=actieveFilter==='alle'?bron:bron.filter(r=>r.naam===actieveFilter);
   } else if(huidigePersoon){
     gefilterd=registraties.filter(r=>r.naam===huidigePersoon);
   } else {
     lijst.innerHTML=`<div class="leeg"><div class="leeg-icon">👤</div><p>Login first to see your registrations</p></div>`;return;
   }
-
   if(gefilterd.length===0){lijst.innerHTML=`<div class="leeg"><div class="leeg-icon">📋</div><p>No registrations yet</p></div>`;return;}
-
   lijst.innerHTML=gefilterd.map(r=>`
     <div class="registratie-item">
       <div class="reg-header"><div class="reg-naam">${r.naam}</div><div class="reg-datum">${formatDatum(r.datum)}</div></div>
@@ -627,16 +605,15 @@ function renderOverzicht(filter) {
       ${isAdmin?`<div class="reg-actions"><button class="btn-edit" onclick="openEdit(${r.id})">✏️ Edit</button><button class="btn-delete" onclick="verwijderReg(${r.id})">🗑 Delete</button></div>`:''}
     </div>`).join('');
 }
-
 function filterOverzicht(filter,btn){
   document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
-  if(btn) btn.classList.add('active');
+  if(btn)btn.classList.add('active');
   renderOverzicht(filter);
 }
 
 // ── EDIT ──
 function openEdit(id){
-  const r=registraties.find(x=>x.id===id); if(!r)return;
+  const r=registraties.find(x=>x.id===id);if(!r)return;
   document.getElementById('edit-id').value=id;
   document.getElementById('edit-datum').value=r.datum||'';
   document.getElementById('edit-werken').value=r.werken||'';
@@ -654,20 +631,15 @@ function openEdit(id){
   ws.innerHTML=werven.filter(w=>w.naam).map(w=>`<option value="${w.naam}" ${w.naam===r.werf?'selected':''}>${w.naam}</option>`).join('');
   document.getElementById('edit-popup').classList.remove('hidden');
 }
-
 function slaEditOp(){
   const id=parseInt(document.getElementById('edit-id').value);
-  const idx=registraties.findIndex(x=>x.id===id); if(idx===-1)return;
-  const start=document.getElementById('edit-start').value;
-  const einde=document.getElementById('edit-einde').value;
-  const pauzeStart=document.getElementById('edit-pauze-start').value;
-  const pauzeEinde=document.getElementById('edit-pauze-einde').value;
+  const idx=registraties.findIndex(x=>x.id===id);if(idx===-1)return;
+  const start=document.getElementById('edit-start').value,einde=document.getElementById('edit-einde').value;
+  const pauzeStart=document.getElementById('edit-pauze-start').value,pauzeEinde=document.getElementById('edit-pauze-einde').value;
   const totalMin=berekenTotaal(start,einde,pauzeStart,pauzeEinde);
   registraties[idx]={...registraties[idx],
-    naam:document.getElementById('edit-naam').value,
-    datum:document.getElementById('edit-datum').value,
-    werf:document.getElementById('edit-werf').value,
-    werken:document.getElementById('edit-werken').value.trim(),
+    naam:document.getElementById('edit-naam').value,datum:document.getElementById('edit-datum').value,
+    werf:document.getElementById('edit-werf').value,werken:document.getElementById('edit-werken').value.trim(),
     start,einde,pauzeStart,pauzeEinde,
     uren:totalMin?Math.round(totalMin)/60:registraties[idx].uren,
     urenTekst:totalMin?minutenNaarTekst(totalMin):registraties[idx].urenTekst,
@@ -677,14 +649,13 @@ function slaEditOp(){
     gewijzigd:new Date().toISOString()
   };
   slaData('wr_registraties_v2',registraties);
-  sluitEditPopup(); renderOverzicht(); toonToast('✅ Registration updated!');
+  sluitEditPopup();renderOverzicht();toonToast('✅ Registration updated!');
 }
-
 function verwijderReg(id){
   if(!confirm('Delete this registration?'))return;
   registraties=registraties.filter(r=>r.id!==id);
   slaData('wr_registraties_v2',registraties);
-  renderOverzicht(); toonToast('🗑 Registration deleted');
+  renderOverzicht();toonToast('🗑 Registration deleted');
 }
 function sluitEditPopup(){document.getElementById('edit-popup').classList.add('hidden');}
 
@@ -696,13 +667,11 @@ function checkAdmin(){
     document.getElementById('admin-locked').style.display='none';
     document.getElementById('admin-content').style.display='block';
     const entry={tijdstip:new Date().toLocaleString('nl-BE'),toestel:navigator.userAgent.includes('Mobile')?'📱 Mobile':'💻 Desktop'};
-    loginLog.unshift(entry);
-    if(loginLog.length>50) loginLog=loginLog.slice(0,50);
+    loginLog.unshift(entry);if(loginLog.length>50)loginLog=loginLog.slice(0,50);
     slaData('wr_loginlog',loginLog);
     document.getElementById('nav-overzicht').style.display='';
     document.getElementById('export-header-btn').style.display='';
-    renderAdmin();
-    laadAdminData(inp);
+    renderAdmin();laadAdminData(inp);
   } else {
     toonToast('⚠️ Wrong password',true);
     document.getElementById('admin-pw').value='';
@@ -720,20 +689,47 @@ function sluitAdmin(){
 function veranderPw(){
   const nieuw=document.getElementById('nieuw-pw').value.trim();
   if(!nieuw){toonToast('⚠️ Enter a new password',true);return;}
-  adminPw=nieuw; slaData('wr_pw',adminPw);
-  document.getElementById('nieuw-pw').value='';
-  toonToast('✅ Password changed!');
+  adminPw=nieuw;slaData('wr_pw',adminPw);
+  document.getElementById('nieuw-pw').value='';toonToast('✅ Password changed!');
 }
 function renderAdmin(){
-  const al=document.getElementById('aannemers-lijst'); if(!al)return;
+  const al=document.getElementById('aannemers-lijst');if(!al)return;
   al.innerHTML=aannemers.map((a,i)=>`<div class="lijst-item ${a.actief?'':'inactief'}"><span class="lijst-item-naam">${a.naam}</span><button class="toggle-btn ${a.actief?'zichtbaar':'verborgen'}" onclick="toggleAannemer(${i})">${a.actief?'✓ Active':'✗ Hidden'}</button><button class="verwijder-btn" onclick="verwijderAannemer(${i})">🗑</button></div>`).join('');
   document.getElementById('werven-lijst').innerHTML=werven.map((w,i)=>`<div class="lijst-item ${w.actief?'':'inactief'}"><span class="lijst-item-naam">${w.naam}</span><button class="toggle-btn ${w.actief?'zichtbaar':'verborgen'}" onclick="toggleWerf(${i})">${w.actief?'✓ Active':'✗ Hidden'}</button><button class="verwijder-btn" onclick="verwijderWerf(${i})">🗑</button></div>`).join('');
   const logLijst=document.getElementById('login-log-lijst');
   logLijst.innerHTML=loginLog.length===0?'<div style="color:var(--text-xs);font-size:13px;">No logins yet</div>':loginLog.map(l=>`<div class="log-item"><div>${l.toestel}</div><div class="log-time">🕐 ${l.tijdstip}</div></div>`).join('');
 }
-function voegAannemerToe(){const inp=document.getElementById('nieuw-aannemer');const naam=inp.value.trim();if(!naam)return;aannemers.push({naam,actief:true});slaData('wr_aannemers_v2',aannemers);inp.value='';renderAdmin();renderNamen();}
-function toggleAannemer(i){aannemers[i].actief=!aannemers[i].actief;slaData('wr_aannemers_v2',aannemers);renderAdmin();renderNamen();}
-function verwijderAannemer(i){if(confirm(`Delete "${aannemers[i].naam}"?`)){aannemers.splice(i,1);slaData('wr_aannemers_v2',aannemers);renderAdmin();renderNamen();}}
+
+async function voegAannemerToe(){
+  const inp=document.getElementById('nieuw-aannemer');
+  const naam=inp.value.trim();if(!naam)return;
+  inp.value='';
+  try {
+    await fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'addWorker',pw:adminPw,naam})});
+  } catch {}
+  aannemers.push({naam,actief:true});
+  slaData('wr_aannemers_v2',aannemers);
+  renderAdmin();renderNamen();toonToast(`✅ ${naam} added`);
+}
+async function toggleAannemer(i){
+  aannemers[i].actief=!aannemers[i].actief;
+  try {
+    await fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'toggleWorker',pw:adminPw,naam:aannemers[i].naam,actief:aannemers[i].actief})});
+  } catch {}
+  slaData('wr_aannemers_v2',aannemers);renderAdmin();renderNamen();
+}
+async function verwijderAannemer(i){
+  if(!confirm(`Delete "${aannemers[i].naam}"?`))return;
+  const naam=aannemers[i].naam;
+  try {
+    await fetch(SHEET_URL,{method:'POST',mode:'no-cors',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'deleteWorker',pw:adminPw,naam})});
+  } catch {}
+  aannemers.splice(i,1);slaData('wr_aannemers_v2',aannemers);renderAdmin();renderNamen();
+}
+
 function voegWerfToe(){const inp=document.getElementById('nieuw-werf');const naam=inp.value.trim();if(!naam)return;werven.push({naam,actief:true});slaData('wr_werven_v2',werven);inp.value='';renderAdmin();}
 function toggleWerf(i){werven[i].actief=!werven[i].actief;slaData('wr_werven_v2',werven);renderAdmin();}
 function verwijderWerf(i){if(confirm(`Delete "${werven[i].naam}"?`)){werven.splice(i,1);slaData('wr_werven_v2',werven);renderAdmin();}}
@@ -744,20 +740,15 @@ function sluitPopup(){document.getElementById('export-popup').classList.add('hid
 function exporteerCSV(){
   const header=['Name','Date','Site','Start','End','Break start','Break end','Total hours','Work performed','Problems','Materials needed','Issues','Timestamp'];
   const rows=registraties.map(r=>[r.naam,r.datum,r.werf,r.start||'',r.einde||'',r.pauzeStart||'',r.pauzeEinde||'',r.urenTekst||r.uren,`"${(r.werken||'').replace(/"/g,'""')}"`,`"${(r.problems||'').replace(/"/g,'""')}"`,`"${(r.materials||'').replace(/"/g,'""')}"`,`"${(r.issues||'').replace(/"/g,'""')}"`,r.tijdstip].join(';'));
-  download('site-registrations.csv','data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent([header.join(';'),...rows].join('\n')));
-  sluitPopup();
+  download('site-registrations.csv','data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent([header.join(';'),...rows].join('\n')));sluitPopup();
 }
 function exporteerJSON(){download('site-backup.json','data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify({aannemers,werven,registraties},null,2)));sluitPopup();}
 function download(naam,href){const a=document.createElement('a');a.href=href;a.download=naam;document.body.appendChild(a);a.click();document.body.removeChild(a);}
-
 function toonToast(msg,fout){
   const t=document.getElementById('toast');
-  t.textContent=msg;
-  t.className='toast '+(fout?'err':'ok');
-  t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),2800);
+  t.textContent=msg;t.className='toast '+(fout?'err':'ok');
+  t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);
 }
-
 document.getElementById('export-popup').addEventListener('click',function(e){if(e.target===this)sluitPopup();});
 document.getElementById('edit-popup').addEventListener('click',function(e){if(e.target===this)sluitEditPopup();});
 </script>
