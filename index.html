@@ -182,9 +182,9 @@
       <div class="header-title">Bruynseels Projects</div>
       <div class="header-sub" id="header-persoon">Site Registration</div>
     </div>
-  </div>
   <div class="header-right">
-    <button class="btn-icon" id="export-header-btn" onclick="toonExport()" title="Export" style="display:none;">⬇️</button>
+  <button class="btn-icon" onclick="laadStatusVanSheet()" title="Refresh">🔄</button>
+  <button class="btn-icon" id="export-header-btn" onclick="toonExport()" title="Export" style="display:none;">⬇️</button>
   </div>
 </div>
 
@@ -378,6 +378,7 @@ let vandaagInSheet = [];
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('f-datum').value = vandaag();
   laadVanSheet();
+  setInterval(laadStatusVanSheet, 60000);
 });
 
 async function laadVanSheet() {
@@ -429,7 +430,7 @@ async function laadStatusVanSheet() {
 function vandaag()    { return new Date().toISOString().split('T')[0]; }
 function initialen(n) { return (n||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2); }
 function formatDatum(d) { if(!d)return''; const[y,m,dag]=d.split('-'); return`${dag}/${m}/${y}`; }
-function heeftVandaag(naam) { return vandaagInSheet.includes(naam)||registraties.some(r=>r.naam===naam&&r.datum===vandaag()); }
+function heeftVandaag(naam) { return vandaagInSheet.includes(naam); }
 
 function tijdNaarMinuten(t) { if(!t)return null; const[h,m]=t.split(':').map(Number); return h*60+m; }
 function berekenTotaal(start,einde,ps,pe) {
