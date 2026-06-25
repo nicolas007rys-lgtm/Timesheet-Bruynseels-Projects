@@ -86,6 +86,9 @@
   input::placeholder, textarea::placeholder { color: var(--text-xs); }
   textarea { resize: vertical; min-height: 80px; }
   select option { background: var(--surface); color: var(--text); }
+  .verplicht { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(198,40,40,0.20) !important; }
+  .verplicht:focus { border-color: var(--red) !important; box-shadow: 0 0 0 3px rgba(198,40,40,0.30) !important; }
+  .req { color: var(--red); font-weight: 800; }
 
   .tijd-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
   .tijd-label { font-size: 11px; font-weight: 600; color: var(--text-xs); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
@@ -205,14 +208,14 @@
     <div class="card">
       <div class="card-titel">📅 Date</div>
       <div class="form-group">
-        <label>Date</label>
+        <label>Date <span class="req">*</span></label>
         <input type="date" id="f-datum">
       </div>
     </div>
     <div class="card">
       <div class="card-titel">📍 Site</div>
       <div class="form-group">
-        <label>Select site</label>
+        <label>Select site <span class="req">*</span></label>
         <select id="f-werf" onchange="werfChanged()"><option value="">— Choose site —</option></select>
       </div>
       <div class="form-group" id="nieuwe-werf-row" style="display:none;">
@@ -226,14 +229,14 @@
     <div class="card">
       <div class="card-titel">⏱ Hours</div>
       <div class="tijd-grid">
-        <div><div class="tijd-label">🟢 Start</div><input type="time" id="f-start" onchange="berekenUren()"></div>
-        <div><div class="tijd-label">🔴 End</div><input type="time" id="f-einde" onchange="berekenUren()"></div>
+        <div><div class="tijd-label">🟢 Start <span class="req">*</span></div><input type="time" id="f-start" onchange="berekenUren()"></div>
+        <div><div class="tijd-label">🔴 End <span class="req">*</span></div><input type="time" id="f-einde" onchange="berekenUren()"></div>
       </div>
       <div class="pauze-sectie">
-        <div class="pauze-titel">☕ Lunch break</div>
+        <div class="pauze-titel">☕ Lunch break <span class="req">*</span></div>
         <div class="tijd-grid">
-          <div><div class="tijd-label">Break start</div><input type="time" id="f-pauze-start" onchange="berekenUren()"></div>
-          <div><div class="tijd-label">Break end</div><input type="time" id="f-pauze-einde" onchange="berekenUren()"></div>
+          <div><div class="tijd-label">Break start <span class="req">*</span></div><input type="time" id="f-pauze-start" onchange="berekenUren()"></div>
+          <div><div class="tijd-label">Break end <span class="req">*</span></div><input type="time" id="f-pauze-einde" onchange="berekenUren()"></div>
         </div>
       </div>
       <div class="totaal-box">
@@ -242,7 +245,7 @@
       </div>
     </div>
     <div class="card">
-      <div class="card-titel">🔨 Work performed</div>
+      <div class="card-titel">🔨 Work performed <span class="req">*</span></div>
       <div class="form-group">
         <textarea id="f-werken" placeholder="Describe what you did today..."></textarea>
       </div>
@@ -386,6 +389,11 @@ let vandaagInSheet = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('f-datum').value = vandaag();
+  VERPLICHTE_VELDEN.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.addEventListener('input', markeerVerplicht); el.addEventListener('change', markeerVerplicht); }
+  });
+  markeerVerplicht();
   laadVanSheet();
   setInterval(laadStatusVanSheet, 60000);
 });
@@ -471,7 +479,7 @@ function gaaNaar(scherm) {
   if(scherm==='overzicht')renderOverzicht();
   if(scherm==='admin')renderAdmin();
   if(scherm==='form'&&!huidigePersoon){gaaNaar('naam');return;}
-  if(scherm==='form')renderWerfSelect();
+  if(scherm==='form'){renderWerfSelect();markeerVerplicht();}
   if(scherm==='naam')renderNamen();
 }
 
@@ -553,7 +561,20 @@ async function voegWerfToeForm() {
   document.getElementById('f-werf').value = bestaat ? bestaat.naam : naam;
   document.getElementById('nieuwe-werf-row').style.display = 'none';
   inp.value = '';
+  markeerVerplicht();
   toonToast(`✅ ${naam} added`);
+}
+
+// Verplichte velden — rode gloed zolang ze leeg zijn
+const VERPLICHTE_VELDEN = ['f-datum','f-werf','f-start','f-einde','f-pauze-start','f-pauze-einde','f-werken'];
+function markeerVerplicht() {
+  VERPLICHTE_VELDEN.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    let leeg = !el.value || !String(el.value).trim();
+    if (id === 'f-werf' && el.value === '__new_site__') leeg = true;
+    el.classList.toggle('verplicht', leeg);
+  });
 }
 
 async function slaOp() {
@@ -586,6 +607,7 @@ async function slaOp() {
   ['f-start','f-einde','f-pauze-start','f-pauze-einde','f-werken','f-problems','f-materials','f-issues'].forEach(id=>{document.getElementById(id).value='';});
   document.getElementById('f-datum').value=vandaag();
   document.getElementById('totaal-display').textContent='—';
+  markeerVerplicht();
   const btn=document.getElementById('btn-opslaan');
   btn.disabled=true; btn.textContent='⏳ Saving...';
   try {
