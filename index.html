@@ -196,6 +196,7 @@
       <div class="screen-title">Who are you?</div>
       <div class="screen-sub">Select your name to start registering</div>
       <div class="naam-grid" id="naam-grid"></div>
+      <button class="export-btn" style="margin-top:14px; justify-content:center;" onclick="voegNaamToeLogin()">➕ Add a name</button>
     </div>
   </div>
 
@@ -212,7 +213,14 @@
       <div class="card-titel">📍 Site</div>
       <div class="form-group">
         <label>Select site</label>
-        <select id="f-werf"><option value="">— Choose site —</option></select>
+        <select id="f-werf" onchange="werfChanged()"><option value="">— Choose site —</option></select>
+      </div>
+      <div class="form-group" id="nieuwe-werf-row" style="display:none;">
+        <label>New site name</label>
+        <div class="toevoeg-row">
+          <input type="text" id="f-nieuwe-werf" placeholder="Enter new site name...">
+          <button class="btn-add" type="button" onclick="voegWerfToeForm()">+</button>
+        </div>
       </div>
     </div>
     <div class="card">
@@ -488,6 +496,21 @@ function kiesNaam(naam) {
   gaaNaar('form');
 }
 
+// Iedereen kan een nieuwe naam toevoegen vanuit het loginscherm
+async function voegNaamToeLogin() {
+  const ingave = prompt('New worker name:');
+  if (!ingave || !ingave.trim()) return;
+  const naam = ingave.trim();
+  if (aannemers.some(a => a.naam && a.naam.toLowerCase() === naam.toLowerCase())) {
+    toonToast('⚠️ Name already exists', true); return;
+  }
+  aannemers.push({ naam, actief: true });
+  slaData('wr_aannemers_v2', aannemers);
+  try { await fetch(SHEET_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'addWorker', naam }) }); } catch {}
+  renderNamen();
+  toonToast(`✅ ${naam} added`);
+}
+
 function renderWerfSelect() {
   const sel=document.getElementById('f-werf');
   const huidig=sel.value;
@@ -498,6 +521,39 @@ function renderWerfSelect() {
     if(w.naam===huidig)opt.selected=true;
     sel.appendChild(opt);
   });
+  const addOpt=document.createElement('option');
+  addOpt.value='__new_site__'; addOpt.textContent='➕ Add new site…';
+  sel.appendChild(addOpt);
+}
+
+// Toont/verbergt het invoerveld wanneer "Add new site" gekozen wordt
+function werfChanged() {
+  const sel = document.getElementById('f-werf');
+  const row = document.getElementById('nieuwe-werf-row');
+  if (sel.value === '__new_site__') {
+    row.style.display = 'block';
+    document.getElementById('f-nieuwe-werf').focus();
+  } else {
+    row.style.display = 'none';
+  }
+}
+
+// Iedereen kan een nieuwe werf toevoegen tijdens het registreren
+async function voegWerfToeForm() {
+  const inp = document.getElementById('f-nieuwe-werf');
+  const naam = inp.value.trim();
+  if (!naam) { toonToast('⚠️ Enter a site name', true); return; }
+  const bestaat = werven.find(w => w.naam && w.naam.toLowerCase() === naam.toLowerCase());
+  if (!bestaat) {
+    werven.push({ naam, actief: true });
+    slaData('wr_werven_v2', werven);
+    try { await fetch(SHEET_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'addSite', naam }) }); } catch {}
+  }
+  renderWerfSelect();
+  document.getElementById('f-werf').value = bestaat ? bestaat.naam : naam;
+  document.getElementById('nieuwe-werf-row').style.display = 'none';
+  inp.value = '';
+  toonToast(`✅ ${naam} added`);
 }
 
 async function slaOp() {
@@ -510,7 +566,7 @@ async function slaOp() {
   const pauzeStart=document.getElementById('f-pauze-start').value;
   const pauzeEinde=document.getElementById('f-pauze-einde').value;
   if(!datum){toonToast('⚠️ Enter a date',true);return;}
-  if(!werf){toonToast('⚠️ Choose a site',true);return;}
+  if(!werf||werf==='__new_site__'){toonToast('⚠️ Choose a site',true);return;}
   if(!werken){toonToast('⚠️ Describe the work',true);return;}
   if(!start||!einde){toonToast('⚠️ Enter start and end time',true);return;}
   if(!pauzeStart||!pauzeEinde){toonToast('⚠️ Enter lunch break times',true);return;}
@@ -746,7 +802,7 @@ function sluitPopup(){document.getElementById('export-popup').classList.add('hid
 function exporteerCSV(){
   const header=['Name','Date','Site','Start','End','Break start','Break end','Total hours','Work performed','Problems','Materials needed','Issues','Timestamp'];
   const rows=registraties.map(r=>[r.naam,r.datum,r.werf,r.start||'',r.einde||'',r.pauzeStart||'',r.pauzeEinde||'',r.urenTekst||r.uren,`"${(r.werken||'').replace(/"/g,'""')}"`,`"${(r.problems||'').replace(/"/g,'""')}"`,`"${(r.materials||'').replace(/"/g,'""')}"`,`"${(r.issues||'').replace(/"/g,'""')}"`,r.tijdstip].join(';'));
-  download('site-registrations.csv','data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent([header.join(';'),...rows].join('\n')));sluitPopup();
+  download('site-registrations.csv','data:text/csv;charset=utf-8,﻿'+encodeURIComponent([header.join(';'),...rows].join('\n')));sluitPopup();
 }
 function exporteerJSON(){download('site-backup.json','data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify({aannemers,werven,registraties},null,2)));sluitPopup();}
 function download(naam,href){const a=document.createElement('a');a.href=href;a.download=naam;document.body.appendChild(a);a.click();document.body.removeChild(a);}
