@@ -250,12 +250,6 @@
         <textarea id="f-werken" placeholder="Describe what you did today..."></textarea>
       </div>
     </div>
-    <div class="card">
-      <div class="card-titel">📝 Notes</div>
-      <div class="form-group"><label>Problems</label><input type="text" id="f-problems" placeholder="Any problems encountered..."></div>
-      <div class="form-group"><label>Materials needed</label><input type="text" id="f-materials" placeholder="Materials required or used..."></div>
-      <div class="form-group"><label>Issues</label><input type="text" id="f-issues" placeholder="Any other issues..."></div>
-    </div>
     <button class="btn-submit" id="btn-opslaan" onclick="slaOp()">Save registration</button>
     <div style="height:8px;"></div>
   </div>
@@ -389,6 +383,7 @@ let vandaagInSheet = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('f-datum').value = vandaag();
+  zetStandaardTijden();
   VERPLICHTE_VELDEN.forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.addEventListener('input', markeerVerplicht); el.addEventListener('change', markeerVerplicht); }
@@ -565,6 +560,15 @@ async function voegWerfToeForm() {
   toonToast(`✅ ${naam} added`);
 }
 
+// Standaard voorinvulling van de tijden
+function zetStandaardTijden() {
+  document.getElementById('f-start').value = '07:00';
+  document.getElementById('f-einde').value = '17:00';
+  document.getElementById('f-pauze-start').value = '12:00';
+  document.getElementById('f-pauze-einde').value = '12:30';
+  berekenUren();
+}
+
 // Verplichte velden — rode gloed zolang ze leeg zijn
 const VERPLICHTE_VELDEN = ['f-datum','f-werf','f-start','f-einde','f-pauze-start','f-pauze-einde','f-werken'];
 function markeerVerplicht() {
@@ -597,16 +601,16 @@ async function slaOp() {
     id:Date.now(),naam:huidigePersoon,datum,werf,werken,
     start,einde,pauzeStart,pauzeEinde,
     uren:Math.round(totalMin)/60,urenTekst:minutenNaarTekst(totalMin),
-    problems:document.getElementById('f-problems').value.trim(),
-    materials:document.getElementById('f-materials').value.trim(),
-    issues:document.getElementById('f-issues').value.trim(),
+    problems:'',
+    materials:'',
+    issues:'',
     tijdstip:new Date().toISOString()
   };
   registraties.unshift(rec);
   slaData('wr_registraties_v2',registraties);
-  ['f-start','f-einde','f-pauze-start','f-pauze-einde','f-werken','f-problems','f-materials','f-issues'].forEach(id=>{document.getElementById(id).value='';});
+  ['f-werken'].forEach(id=>{document.getElementById(id).value='';});
   document.getElementById('f-datum').value=vandaag();
-  document.getElementById('totaal-display').textContent='—';
+  zetStandaardTijden();
   markeerVerplicht();
   const btn=document.getElementById('btn-opslaan');
   btn.disabled=true; btn.textContent='⏳ Saving...';
