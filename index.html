@@ -371,12 +371,22 @@ function laadData(k, fb) {
   try { const d=localStorage.getItem(k); if(!d)return fb; const p=JSON.parse(d); if(!Array.isArray(p)||p.length===0)return fb; return p; } catch { return fb; }
 }
 function slaData(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+// laadData() aanvaardt enkel niet-lege arrays; voor tekstwaarden (zoals het wachtwoord) is een aparte loader nodig.
+function laadTekst(k, fb) {
+  try { const d=localStorage.getItem(k); if(!d)return fb; const p=JSON.parse(d); return (typeof p==='string'&&p.trim())?p:fb; } catch { return fb; }
+}
+// Ontsnapt tekst voor veilig gebruik in innerHTML en HTML-attributen (voorkomt HTML/script-injectie).
+function esc(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+// CSV-veld: altijd tussen aanhalingstekens, interne aanhalingstekens verdubbeld.
+function csvVeld(v) { return '"' + String(v ?? '').replace(/"/g, '""') + '"'; }
 
 let aannemers    = [];
 let werven       = [];
 let registraties = laadData('wr_registraties_v2', []);
 let loginLog     = laadData('wr_loginlog', []);
-let adminPw      = laadData('wr_pw', STANDAARD_PW) || STANDAARD_PW;
+let adminPw      = laadTekst('wr_pw', STANDAARD_PW);
 let huidigePersoon = null;
 let isAdmin = false;
 let vandaagInSheet = [];
@@ -439,7 +449,17 @@ async function laadStatusVanSheet() {
   renderOverzicht();
 }
 
-function vandaag()    { return new Date().toISOString().split('T')[0]; }
+function lokaleDatum(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function vandaag()    { return lokaleDatum(new Date()); }
+// Datum uit de Sheet: Apps Script serialiseert datumcellen als UTC-tijdstempel (bv. 2026-06-24T22:00:00.000Z
+// voor 25/06 in België). Zet die om naar de lokale kalenderdatum i.p.v. de eerste 10 tekens af te knippen.
+function normaliseerSheetDatum(v) {
+  if (v === null || v === undefined || v === '') return '';
+  const t = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  if (/^\d{4}-\d{2}-\d{2}T/.test(t)) { const d = new Date(t); if (!isNaN(d)) return lokaleDatum(d); }
+  return t.slice(0, 10);
+}
 function initialen(n) { return (n||'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2); }
 function formatDatum(d) { if(!d)return''; const[y,m,dag]=d.split('-'); return`${dag}/${m}/${y}`; }
 function heeftVandaag(naam) { return vandaagInSheet.includes(naam); }
@@ -449,7 +469,7 @@ function berekenTotaal(start,einde,ps,pe) {
   const s=tijdNaarMinuten(start),e=tijdNaarMinuten(einde);
   if(s===null||e===null||e<=s)return null;
   let tot=e-s;
-  if(ps&&pe){const a=tijdNaarMinuten(ps),b=tijdNaarMinuten(pe);if(a&&b&&b>a)tot-=(b-a);}
+  if(ps&&pe){const a=tijdNaarMinuten(ps),b=tijdNaarMinuten(pe);if(a!==null&&b!==null&&b>a)tot-=(b-a);}
   return tot;
 }
 function minutenNaarTekst(min) {
@@ -487,7 +507,7 @@ function renderNamen() {
     const ok=heeftVandaag(a.naam);
     const btn=document.createElement('button');
     btn.className='naam-btn';
-    btn.innerHTML=`<div class="status-dot ${ok?'ok':'open'}"></div><div class="avatar">${initialen(a.naam)}</div><div class="naam-label">${a.naam}</div><div class="naam-status ${ok?'ok':'open'}">${ok?'✓ Registered today':'— Not yet registered'}</div>`;
+    btn.innerHTML=`<div class="status-dot ${ok?'ok':'open'}"></div><div class="avatar">${esc(initialen(a.naam))}</div><div class="naam-label">${esc(a.naam)}</div><div class="naam-status ${ok?'ok':'open'}">${ok?'✓ Registered today':'— Not yet registered'}</div>`;
     btn.onclick=()=>kiesNaam(a.naam);
     grid.appendChild(btn);
   });
@@ -495,7 +515,7 @@ function renderNamen() {
 function kiesNaam(naam) {
   huidigePersoon=naam;
   document.getElementById('header-persoon').textContent=naam;
-  document.getElementById('persoon-badge-cont').innerHTML=`<div class="persoon-badge"><div class="avatar-sm">${initialen(naam)}</div><div class="badge-info"><div class="badge-role">Logged in as</div><div class="badge-naam">${naam}</div></div><div class="badge-wissel" onclick="gaaNaar('naam')">Switch</div></div>`;
+  document.getElementById('persoon-badge-cont').innerHTML=`<div class="persoon-badge"><div class="avatar-sm">${esc(initialen(naam))}</div><div class="badge-info"><div class="badge-role">Logged in as</div><div class="badge-naam">${esc(naam)}</div></div><div class="badge-wissel" onclick="gaaNaar('naam')">Switch</div></div>`;
   gaaNaar('form');
 }
 
@@ -600,7 +620,7 @@ async function slaOp() {
   const rec={
     id:Date.now(),naam:huidigePersoon,datum,werf,werken,
     start,einde,pauzeStart,pauzeEinde,
-    uren:Math.round(totalMin)/60,urenTekst:minutenNaarTekst(totalMin),
+    uren:Math.round(totalMin/60*100)/100,urenTekst:minutenNaarTekst(totalMin),
     problems:'',
     materials:'',
     issues:'',
@@ -632,7 +652,7 @@ async function laadAdminData(pw) {
     if(json.data){
       sheetRegistraties=json.data.map((r,i)=>({
         id:'sheet_'+i,naam:r['Name']||'',
-        datum:r['Date']?(r['Date'] instanceof Object?r['Date']:String(r['Date']).slice(0,10)):'',
+        datum:normaliseerSheetDatum(r['Date']),
         werf:r['Site']||'',start:r['Start']||'',einde:r['End']||'',
         pauzeStart:r['Break start']||'',pauzeEinde:r['Break end']||'',
         urenTekst:r['Total hours']||'',werken:r['Work performed']||'',
@@ -649,7 +669,7 @@ function renderOverzicht(filter) {
   if(filter!==undefined)actieveFilter=filter;
   const nc=document.getElementById('privacy-notice-cont');
   if(!isAdmin&&huidigePersoon){nc.innerHTML=`<div class="privacy-notice">🔒 Showing your registrations only. Admin can view all.</div>`;}
-  else if(isAdmin){nc.innerHTML=`<div class="privacy-notice" style="border-color:rgba(46,125,80,0.3);color:var(--green);">👁 Admin view — all registrations visible</div>`;}
+  else if(isAdmin){nc.innerHTML=`<div class="privacy-notice" style="border-color:rgba(46,125,80,0.3);color:var(--green);">👁 Admin view — all registrations visible${sheetRegistraties.length>0?' (read-only: edit them in the Google Sheet)':''}</div>`;}
   else{nc.innerHTML='';}
   const filterRow=document.getElementById('filter-row');
   if(isAdmin){
@@ -675,17 +695,17 @@ function renderOverzicht(filter) {
   if(!gefilterd.length){lijst.innerHTML=`<div class="leeg"><div class="leeg-icon">📋</div><p>No registrations yet</p></div>`;return;}
   lijst.innerHTML=gefilterd.map(r=>`
     <div class="registratie-item">
-      <div class="reg-header"><div class="reg-naam">${r.naam}</div><div class="reg-datum">${formatDatum(r.datum)}</div></div>
-      <div class="reg-werf">📍 ${r.werf}</div>
-      <div class="reg-tijden">${r.start?`🟢 ${r.start}`:''}${r.pauzeStart?` ☕ ${r.pauzeStart}–${r.pauzeEinde||'?'}`:''}${r.einde?` 🔴 ${r.einde}`:''}</div>
-      <div class="reg-werken">${r.werken}</div>
+      <div class="reg-header"><div class="reg-naam">${esc(r.naam)}</div><div class="reg-datum">${esc(formatDatum(r.datum))}</div></div>
+      <div class="reg-werf">📍 ${esc(r.werf)}</div>
+      <div class="reg-tijden">${r.start?`🟢 ${esc(r.start)}`:''}${r.pauzeStart?` ☕ ${esc(r.pauzeStart)}–${esc(r.pauzeEinde||'?')}`:''}${r.einde?` 🔴 ${esc(r.einde)}`:''}</div>
+      <div class="reg-werken">${esc(r.werken)}</div>
       <div class="reg-footer">
-        <span class="tag uren">⏱ ${r.urenTekst||(r.uren+'h')}</span>
-        ${r.problems?`<span class="tag problem">⚠️ ${r.problems}</span>`:''}
-        ${r.materials?`<span class="tag material">🧱 ${r.materials}</span>`:''}
-        ${r.issues?`<span class="tag">❗ ${r.issues}</span>`:''}
+        <span class="tag uren">⏱ ${esc(r.urenTekst||(r.uren+'h'))}</span>
+        ${r.problems?`<span class="tag problem">⚠️ ${esc(r.problems)}</span>`:''}
+        ${r.materials?`<span class="tag material">🧱 ${esc(r.materials)}</span>`:''}
+        ${r.issues?`<span class="tag">❗ ${esc(r.issues)}</span>`:''}
       </div>
-      ${isAdmin?`<div class="reg-actions"><button class="btn-edit" onclick="openEdit(${r.id})">✏️ Edit</button><button class="btn-delete" onclick="verwijderReg(${r.id})">🗑 Delete</button></div>`:''}
+      ${(isAdmin&&typeof r.id==='number')?`<div class="reg-actions"><button class="btn-edit" onclick="openEdit(${r.id})">✏️ Edit</button><button class="btn-delete" onclick="verwijderReg(${r.id})">🗑 Delete</button></div>`:''}
     </div>`).join('');
 }
 function filterOverzicht(filter,btn){
@@ -708,9 +728,9 @@ function openEdit(id){
   document.getElementById('edit-issues').value=r.issues||'';
   document.getElementById('edit-totaal-display').textContent=r.urenTekst||(r.uren+'h')||'—';
   const ns=document.getElementById('edit-naam');
-  ns.innerHTML=aannemers.filter(a=>a.naam).map(a=>`<option value="${a.naam}" ${a.naam===r.naam?'selected':''}>${a.naam}</option>`).join('');
+  ns.innerHTML=aannemers.filter(a=>a.naam).map(a=>`<option value="${esc(a.naam)}" ${a.naam===r.naam?'selected':''}>${esc(a.naam)}</option>`).join('');
   const ws=document.getElementById('edit-werf');
-  ws.innerHTML=werven.filter(w=>w.naam).map(w=>`<option value="${w.naam}" ${w.naam===r.werf?'selected':''}>${w.naam}</option>`).join('');
+  ws.innerHTML=werven.filter(w=>w.naam).map(w=>`<option value="${esc(w.naam)}" ${w.naam===r.werf?'selected':''}>${esc(w.naam)}</option>`).join('');
   document.getElementById('edit-popup').classList.remove('hidden');
 }
 function slaEditOp(){
@@ -723,7 +743,7 @@ function slaEditOp(){
     naam:document.getElementById('edit-naam').value,datum:document.getElementById('edit-datum').value,
     werf:document.getElementById('edit-werf').value,werken:document.getElementById('edit-werken').value.trim(),
     start,einde,pauzeStart,pauzeEinde,
-    uren:totalMin?Math.round(totalMin)/60:registraties[idx].uren,
+    uren:totalMin?Math.round(totalMin/60*100)/100:registraties[idx].uren,
     urenTekst:totalMin?minutenNaarTekst(totalMin):registraties[idx].urenTekst,
     problems:document.getElementById('edit-problems').value.trim(),
     materials:document.getElementById('edit-materials').value.trim(),
@@ -775,10 +795,10 @@ function veranderPw(){
 }
 function renderAdmin(){
   const al=document.getElementById('aannemers-lijst');if(!al)return;
-  al.innerHTML=aannemers.map((a,i)=>`<div class="lijst-item ${a.actief?'':'inactief'}"><span class="lijst-item-naam">${a.naam}</span><button class="toggle-btn ${a.actief?'zichtbaar':'verborgen'}" onclick="toggleAannemer(${i})">${a.actief?'✓ Active':'✗ Hidden'}</button><button class="verwijder-btn" onclick="verwijderAannemer(${i})">🗑</button></div>`).join('');
-  document.getElementById('werven-lijst').innerHTML=werven.map((w,i)=>`<div class="lijst-item ${w.actief?'':'inactief'}"><span class="lijst-item-naam">${w.naam}</span><button class="toggle-btn ${w.actief?'zichtbaar':'verborgen'}" onclick="toggleWerf(${i})">${w.actief?'✓ Active':'✗ Hidden'}</button><button class="verwijder-btn" onclick="verwijderWerf(${i})">🗑</button></div>`).join('');
+  al.innerHTML=aannemers.map((a,i)=>`<div class="lijst-item ${a.actief?'':'inactief'}"><span class="lijst-item-naam">${esc(a.naam)}</span><button class="toggle-btn ${a.actief?'zichtbaar':'verborgen'}" onclick="toggleAannemer(${i})">${a.actief?'✓ Active':'✗ Hidden'}</button><button class="verwijder-btn" onclick="verwijderAannemer(${i})">🗑</button></div>`).join('');
+  document.getElementById('werven-lijst').innerHTML=werven.map((w,i)=>`<div class="lijst-item ${w.actief?'':'inactief'}"><span class="lijst-item-naam">${esc(w.naam)}</span><button class="toggle-btn ${w.actief?'zichtbaar':'verborgen'}" onclick="toggleWerf(${i})">${w.actief?'✓ Active':'✗ Hidden'}</button><button class="verwijder-btn" onclick="verwijderWerf(${i})">🗑</button></div>`).join('');
   const logLijst=document.getElementById('login-log-lijst');
-  logLijst.innerHTML=loginLog.length===0?'<div style="color:var(--text-xs);font-size:13px;">No logins yet</div>':loginLog.map(l=>`<div class="log-item"><div>${l.toestel}</div><div class="log-time">🕐 ${l.tijdstip}</div></div>`).join('');
+  logLijst.innerHTML=loginLog.length===0?'<div style="color:var(--text-xs);font-size:13px;">No logins yet</div>':loginLog.map(l=>`<div class="log-item"><div>${esc(l.toestel)}</div><div class="log-time">🕐 ${esc(l.tijdstip)}</div></div>`).join('');
 }
 
 async function voegAannemerToe(){
@@ -827,7 +847,7 @@ function toonExport(){document.getElementById('export-popup').classList.remove('
 function sluitPopup(){document.getElementById('export-popup').classList.add('hidden');}
 function exporteerCSV(){
   const header=['Name','Date','Site','Start','End','Break start','Break end','Total hours','Work performed','Problems','Materials needed','Issues','Timestamp'];
-  const rows=registraties.map(r=>[r.naam,r.datum,r.werf,r.start||'',r.einde||'',r.pauzeStart||'',r.pauzeEinde||'',r.urenTekst||r.uren,`"${(r.werken||'').replace(/"/g,'""')}"`,`"${(r.problems||'').replace(/"/g,'""')}"`,`"${(r.materials||'').replace(/"/g,'""')}"`,`"${(r.issues||'').replace(/"/g,'""')}"`,r.tijdstip].join(';'));
+  const rows=registraties.map(r=>[r.naam,r.datum,r.werf,r.start,r.einde,r.pauzeStart,r.pauzeEinde,r.urenTekst||r.uren,r.werken,r.problems,r.materials,r.issues,r.tijdstip].map(csvVeld).join(';'));
   download('site-registrations.csv','data:text/csv;charset=utf-8,﻿'+encodeURIComponent([header.join(';'),...rows].join('\n')));sluitPopup();
 }
 function exporteerJSON(){download('site-backup.json','data:application/json;charset=utf-8,'+encodeURIComponent(JSON.stringify({aannemers,werven,registraties},null,2)));sluitPopup();}
